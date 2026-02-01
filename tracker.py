@@ -157,6 +157,11 @@ def process_article80(records, config):
         street_suffix = r.get("project_street_suffix", "")
         address = " ".join(filter(None, [str(street_num), str(street_name), str(street_suffix)]))
 
+        website_url = r.get("website_url") or ""
+        last_filed = r.get("last_filed_date") or ""
+        board_approved = r.get("last_board_approved_date") or ""
+        primary_date = board_approved or last_filed
+
         projects.append({
             "id": str(r.get("_id", r.get("project_id", ""))),
             "name": r.get("project__project_name") or "Unknown",
@@ -168,7 +173,10 @@ def process_article80(records, config):
             "estimated_valuation": estimated_val,
             "description": r.get("description") or "N/A",
             "proposed_use": r.get("project_uses") or "N/A",
-            "board_approval_date": r.get("last_board_approved_date") or "N/A",
+            "board_approval_date": board_approved or "N/A",
+            "last_filed_date": last_filed or "N/A",
+            "website_url": website_url,
+            "primary_date": primary_date,
             "keywords_matched": all_matched,
             "hvac_relevance": relevance,
             "source": "article80",
@@ -209,17 +217,26 @@ def process_permits(records, config):
 
         sqft = parse_sqft(r.get("SQ_FEET", r.get("sq_feet", "")))
 
+        permit_number = r.get("PERMITNUMBER", r.get("permitnumber", ""))
+        issued_date = r.get("ISSUED_DATE", r.get("issued_date", ""))
+
         projects.append({
-            "id": str(r.get("_id", r.get("PERMITNUMBER", r.get("permitnumber", "")))),
+            "id": str(r.get("_id", permit_number or "")),
             "name": r.get("DESCRIPTION", r.get("description", "Permit")) or "Permit",
             "address": r.get("ADDRESS", r.get("address", "N/A")),
             "neighborhood": r.get("CITY", r.get("city", "Boston")),
-            "status": "Issued",
+            "status": r.get("STATUS", r.get("status", "")) or "Issued",
             "permit_type": r.get("PERMITTYPE", r.get("permittype", "N/A")),
+            "permit_number": str(permit_number) if permit_number else "",
+            "applicant": r.get("APPLICANT", r.get("applicant", "")) or "",
+            "worktype": r.get("WORKTYPE", r.get("worktype", "")) or "",
+            "permit_type_descr": r.get("PERMIT_TYPE_DESCR", r.get("permit_type_descr", "")) or "",
+            "expiration_date": r.get("EXPIRATION_DATE", r.get("expiration_date", "")) or "",
             "sqft": sqft,
             "valuation": valuation,
             "description": r.get("COMMENTS", r.get("comments", "N/A")),
-            "issued_date": r.get("ISSUED_DATE", r.get("issued_date", "N/A")),
+            "issued_date": issued_date or "N/A",
+            "primary_date": issued_date or "",
             "keywords_matched": all_matched,
             "hvac_relevance": relevance,
             "source": "permits",
@@ -265,112 +282,203 @@ def escape_html(text):
 
 
 def generate_html(article80_projects, permit_projects, run_time):
-    """Generate mobile-friendly HTML report."""
-    new_a80 = [p for p in article80_projects if p.get("is_new")]
-    seen_a80 = [p for p in article80_projects if not p.get("is_new")]
-    new_permits = [p for p in permit_projects if p.get("is_new")]
-    seen_permits = [p for p in permit_projects if not p.get("is_new")]
+    """Generate mobile-friendly HTML report with search, filters, and sorting."""
+    all_projects = list(article80_projects) + list(permit_projects)
 
-    # Sort by relevance (high first) then by valuation/sqft descending
+    # Sort by relevance (high first) then by valuation descending
     def sort_key(p):
         rel_order = {"high": 0, "medium": 1, "low": 2}
         return (rel_order.get(p.get("hvac_relevance", "low"), 2),
                 -(p.get("valuation", 0) or p.get("estimated_valuation", 0)))
 
-    for lst in [new_a80, seen_a80, new_permits, seen_permits]:
-        lst.sort(key=sort_key)
+    all_projects.sort(key=sort_key)
 
-    def relevance_badge(rel):
-        colors = {"high": "#c0392b", "medium": "#e67e22", "low": "#7f8c8d"}
-        color = colors.get(rel, "#7f8c8d")
-        return f'<span style="background:{color};color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:bold;">{rel.upper()}</span>'
+    summary_new = sum(1 for p in all_projects if p.get("is_new"))
+    summary_total = len(all_projects)
+    summary_high = sum(1 for p in all_projects if p.get("hvac_relevance") == "high")
 
-    def new_badge():
-        return '<span style="background:#27ae60;color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:bold;margin-left:4px;">NEW</span>'
+    # Collect unique neighborhoods and statuses for filter dropdowns
+    neighborhoods = sorted(set(p.get("neighborhood", "N/A") for p in all_projects))
+    statuses = sorted(set(p.get("status", "N/A") for p in all_projects))
 
-    def render_a80_card(p):
+    def format_date_display(date_str):
+        """Format an ISO date string for display."""
+        if not date_str:
+            return ""
+        s = str(date_str)
+        if "T" in s:
+            s = s.split("T")[0]
+        return s
+
+    def render_card(p):
+        is_a80 = p.get("source") == "article80"
+        source_label = "Article 80" if is_a80 else "Permit"
+        source_color = "#3498db" if is_a80 else "#e67e22"
+        border_color = "#27ae60" if p.get("is_new") else source_color
+
+        rel = p.get("hvac_relevance", "low")
+        rel_colors = {"high": "#c0392b", "medium": "#e67e22", "low": "#7f8c8d"}
+        rel_color = rel_colors.get(rel, "#7f8c8d")
+
+        new_badge = ""
+        if p.get("is_new"):
+            new_badge = '<span class="badge badge-new">NEW</span>'
+
+        # Keywords
         kw_html = ""
-        if p["keywords_matched"]:
+        if p.get("keywords_matched"):
             tags = "".join(
-                f'<span style="background:#eee;padding:2px 6px;border-radius:4px;font-size:0.75em;margin:2px;">{escape_html(k)}</span>'
+                '<span class="kw-tag">{}</span>'.format(escape_html(k))
                 for k in set(p["keywords_matched"])
             )
-            kw_html = f'<div style="margin-top:6px;">Keywords: {tags}</div>'
+            kw_html = '<div class="card-keywords">Keywords: {}</div>'.format(tags)
 
-        badge = new_badge() if p.get("is_new") else ""
-        return f"""
-        <div style="border:1px solid #ddd;border-left:4px solid {'#27ae60' if p.get('is_new') else '#3498db'};border-radius:8px;padding:12px;margin-bottom:12px;background:#fff;">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
-                <strong style="font-size:1em;">{escape_html(p['name'])}</strong>
-                <div>{relevance_badge(p['hvac_relevance'])}{badge}</div>
-            </div>
-            <div style="color:#666;font-size:0.85em;margin-top:4px;">
-                {escape_html(p['address'])} &bull; {escape_html(p['neighborhood'])}
-            </div>
-            <div style="font-size:0.85em;margin-top:6px;">
-                <strong>Status:</strong> {escape_html(p['status'])} &bull;
-                <strong>Type:</strong> {escape_html(p['record_type'])} &bull;
-                <strong>Size:</strong> {format_sqft(p['sqft'])}
-                {f" &bull; <strong>Est. Value:</strong> {format_currency(p['estimated_valuation'])}" if p['estimated_valuation'] > 0 else ""}
-            </div>
-            <div style="font-size:0.85em;margin-top:6px;color:#444;">
-                {escape_html(str(p.get('description') or 'N/A')[:300])}{'...' if len(str(p.get('description') or '')) > 300 else ''}
-            </div>
-            <div style="font-size:0.85em;margin-top:4px;color:#444;">
-                <strong>Proposed Use:</strong> {escape_html(str(p.get('proposed_use') or 'N/A')[:200])}
-            </div>
-            {kw_html}
-        </div>"""
+        # Date display
+        primary_date = p.get("primary_date", "")
+        date_display = format_date_display(primary_date)
+        date_sortable = date_display  # YYYY-MM-DD already sortable
 
-    def render_permit_card(p):
-        kw_html = ""
-        if p["keywords_matched"]:
-            tags = "".join(
-                f'<span style="background:#eee;padding:2px 6px;border-radius:4px;font-size:0.75em;margin:2px;">{escape_html(k)}</span>'
-                for k in set(p["keywords_matched"])
+        # Source-specific fields
+        detail_html = ""
+        if is_a80:
+            val = p.get("estimated_valuation", 0)
+            val_html = " &bull; <strong>Est. Value:</strong> {}".format(format_currency(val)) if val > 0 else ""
+            detail_html = (
+                '<div class="card-detail">'
+                '<strong>Status:</strong> {status} &bull; '
+                '<strong>Type:</strong> {rtype} &bull; '
+                '<strong>Size:</strong> {sqft}{val}'
+                '</div>'
+                '<div class="card-detail">'
+                '<strong>Proposed Use:</strong> {use}'
+                '</div>'
+            ).format(
+                status=escape_html(p.get("status", "N/A")),
+                rtype=escape_html(p.get("record_type", "N/A")),
+                sqft=format_sqft(p.get("sqft", 0)),
+                val=val_html,
+                use=escape_html(str(p.get("proposed_use") or "N/A")[:200]),
             )
-            kw_html = f'<div style="margin-top:6px;">Keywords: {tags}</div>'
+        else:
+            issued = format_date_display(p.get("issued_date", ""))
+            permit_num = p.get("permit_number", "")
+            applicant = p.get("applicant", "")
+            worktype = p.get("worktype", "")
+            detail_html = (
+                '<div class="card-detail">'
+                '<strong>Valuation:</strong> {val} &bull; '
+                '<strong>Size:</strong> {sqft} &bull; '
+                '<strong>Issued:</strong> {issued}'
+                '</div>'
+            ).format(
+                val=format_currency(p.get("valuation", 0)),
+                sqft=format_sqft(p.get("sqft", 0)),
+                issued=escape_html(issued) if issued else "N/A",
+            )
+            if permit_num or applicant or worktype:
+                extras = []
+                if permit_num:
+                    extras.append("<strong>Permit:</strong> {}".format(escape_html(permit_num)))
+                if applicant:
+                    extras.append("<strong>Applicant:</strong> {}".format(escape_html(applicant)))
+                if worktype:
+                    extras.append("<strong>Work Type:</strong> {}".format(escape_html(worktype)))
+                detail_html += '<div class="card-detail">{}</div>'.format(" &bull; ".join(extras))
 
-        badge = new_badge() if p.get("is_new") else ""
-        issued = p.get("issued_date", "N/A")
-        if issued and issued != "N/A" and "T" in str(issued):
-            issued = str(issued).split("T")[0]
+        # Description
+        desc = str(p.get("description") or "N/A")
+        desc_short = desc[:300] + ("..." if len(desc) > 300 else "")
 
-        return f"""
-        <div style="border:1px solid #ddd;border-left:4px solid {'#27ae60' if p.get('is_new') else '#e67e22'};border-radius:8px;padding:12px;margin-bottom:12px;background:#fff;">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
-                <strong style="font-size:1em;">{escape_html(p['name'][:100])}</strong>
-                <div>{relevance_badge(p['hvac_relevance'])}{badge}</div>
-            </div>
-            <div style="color:#666;font-size:0.85em;margin-top:4px;">
-                {escape_html(p['address'])}
-            </div>
-            <div style="font-size:0.85em;margin-top:6px;">
-                <strong>Valuation:</strong> {format_currency(p['valuation'])} &bull;
-                <strong>Size:</strong> {format_sqft(p['sqft'])} &bull;
-                <strong>Issued:</strong> {escape_html(str(issued))}
-            </div>
-            <div style="font-size:0.85em;margin-top:6px;color:#444;">
-                {escape_html(str(p.get('description') or 'N/A')[:300])}
-            </div>
-            {kw_html}
-        </div>"""
+        # Links row
+        links = []
+        if is_a80 and p.get("website_url"):
+            links.append('<a class="link-btn" href="{}" target="_blank" rel="noopener">View Project</a>'.format(
+                escape_html(p["website_url"])))
+        if not is_a80 and p.get("permit_number"):
+            permit_url = "https://data.boston.gov/dataset/approved-building-permits/resource/6ddcd912-32a0-43df-9908-63574f8c7e77?filters=PERMITNUMBER%3A{}".format(
+                urllib.parse.quote(str(p["permit_number"])))
+            links.append('<a class="link-btn" href="{}" target="_blank" rel="noopener">Permit #{}</a>'.format(
+                escape_html(permit_url), escape_html(str(p["permit_number"]))))
 
-    def render_section(title, projects, renderer, empty_msg):
-        cards = "".join(renderer(p) for p in projects) if projects else f'<p style="color:#888;">{empty_msg}</p>'
-        count = len(projects)
-        return f"""
-        <div style="margin-bottom:24px;">
-            <h2 style="border-bottom:2px solid #3498db;padding-bottom:6px;font-size:1.1em;">
-                {title} <span style="font-size:0.8em;color:#888;">({count})</span>
-            </h2>
-            {cards}
-        </div>"""
+        address = p.get("address", "")
+        name = p.get("name", "")
+        search_q = urllib.parse.quote('"{}" "{}" Boston construction'.format(name[:60], address))
+        links.append('<a class="link-btn" href="https://www.google.com/search?q={}" target="_blank" rel="noopener">Search News</a>'.format(search_q))
 
-    summary_new = len(new_a80) + len(new_permits)
-    summary_total = len(article80_projects) + len(permit_projects)
+        if address and address != "N/A":
+            map_q = urllib.parse.quote("{}, Boston, MA".format(address))
+            links.append('<a class="link-btn" href="https://www.google.com/maps/search/?api=1&query={}" target="_blank" rel="noopener">View on Map</a>'.format(map_q))
 
-    html = f"""<!DOCTYPE html>
+        links_html = '<div class="card-links">{}</div>'.format("".join(links)) if links else ""
+
+        # Build search text for data attribute
+        search_parts = [
+            name or "", address or "",
+            str(p.get("description") or ""),
+            " ".join(p.get("keywords_matched", [])),
+            p.get("neighborhood") or "",
+            p.get("applicant") or "",
+        ]
+        search_text = " ".join(search_parts).lower().replace('"', "&quot;")
+
+        return (
+            '<div class="project-card" '
+            'data-source="{source}" '
+            'data-relevance="{relevance}" '
+            'data-neighborhood="{neighborhood}" '
+            'data-status="{status}" '
+            'data-is-new="{is_new}" '
+            'data-date="{date}" '
+            'data-search="{search}">'
+            '<div class="card-header">'
+            '<div class="card-title-row">'
+            '<strong class="card-name">{name}</strong>'
+            '<div class="card-badges">'
+            '<span class="badge badge-source" style="background:{source_color};">{source_label}</span>'
+            '<span class="badge" style="background:{rel_color};">{rel_upper}</span>'
+            '{new_badge}'
+            '</div></div>'
+            '<div class="card-sub">{addr} &bull; {hood}'
+            '{date_span}'
+            '</div></div>'
+            '{detail_html}'
+            '<div class="card-desc">{desc}</div>'
+            '{kw_html}'
+            '{links_html}'
+            '</div>'
+        ).format(
+            source=escape_html(p.get("source", "")),
+            relevance=escape_html(rel),
+            neighborhood=escape_html(p.get("neighborhood", "N/A")),
+            status=escape_html(p.get("status", "N/A")),
+            is_new="true" if p.get("is_new") else "false",
+            date=escape_html(date_sortable),
+            search=search_text[:500],
+            name=escape_html(name[:120]),
+            source_color=source_color,
+            source_label=source_label,
+            rel_color=rel_color,
+            rel_upper=rel.upper(),
+            new_badge=new_badge,
+            addr=escape_html(address),
+            hood=escape_html(p.get("neighborhood", "N/A")),
+            date_span=' &bull; <strong>{}</strong>'.format(escape_html(date_display)) if date_display else "",
+            detail_html=detail_html,
+            desc=escape_html(desc_short),
+            kw_html=kw_html,
+            links_html=links_html,
+        )
+
+    cards_html = "".join(render_card(p) for p in all_projects)
+
+    neighborhood_options = "".join(
+        '<option value="{v}">{v}</option>'.format(v=escape_html(n)) for n in neighborhoods
+    )
+    status_options = "".join(
+        '<option value="{v}">{v}</option>'.format(v=escape_html(s)) for s in statuses
+    )
+
+    html = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -384,7 +492,7 @@ def generate_html(article80_projects, permit_projects, run_time):
             color: #333;
             line-height: 1.5;
             padding: 12px;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
         }}
         h1 {{ font-size: 1.3em; margin-bottom: 4px; }}
@@ -397,7 +505,7 @@ def generate_html(article80_projects, permit_projects, run_time):
         }}
         .summary-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
             gap: 8px;
             margin-top: 8px;
         }}
@@ -409,11 +517,154 @@ def generate_html(article80_projects, permit_projects, run_time):
         }}
         .stat-num {{ font-size: 1.5em; font-weight: bold; color: #2c3e50; }}
         .stat-label {{ font-size: 0.75em; color: #888; }}
-        details summary {{
-            cursor: pointer;
+        .toolbar {{
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #ddd;
+        }}
+        .search-input {{
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 1em;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            margin-bottom: 10px;
+        }}
+        .search-input:focus {{
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52,152,219,0.15);
+        }}
+        .filter-row {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }}
+        .filter-select {{
+            padding: 7px 10px;
+            font-size: 0.85em;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            outline: none;
+            flex: 1 1 140px;
+            min-width: 120px;
+        }}
+        .filter-select:focus {{
+            border-color: #3498db;
+        }}
+        .filter-count {{
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 8px;
+        }}
+        .project-card {{
+            border: 1px solid #ddd;
+            border-left: 4px solid #3498db;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #fff;
+        }}
+        .project-card[data-is-new="true"] {{
+            border-left-color: #27ae60;
+        }}
+        .card-header {{
+            margin-bottom: 6px;
+        }}
+        .card-title-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        .card-name {{
+            font-size: 1em;
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow-wrap: break-word;
+        }}
+        .card-badges {{
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }}
+        .badge {{
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.72em;
             font-weight: bold;
+            white-space: nowrap;
+        }}
+        .badge-new {{
+            background: #27ae60;
+        }}
+        .card-sub {{
+            color: #666;
+            font-size: 0.85em;
+            margin-top: 4px;
+        }}
+        .card-detail {{
+            font-size: 0.85em;
+            margin-top: 4px;
+        }}
+        .card-desc {{
+            font-size: 0.85em;
+            margin-top: 6px;
+            color: #444;
+        }}
+        .card-keywords {{
+            margin-top: 6px;
+            font-size: 0.85em;
+        }}
+        .kw-tag {{
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            margin: 2px;
+            display: inline-block;
+        }}
+        .card-links {{
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        .link-btn {{
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 0.78em;
+            border: 1px solid #3498db;
+            border-radius: 4px;
             color: #3498db;
-            padding: 4px 0;
+            text-decoration: none;
+            font-weight: 600;
+        }}
+        .link-btn:hover {{
+            background: #3498db;
+            color: #fff;
+        }}
+        .no-results {{
+            text-align: center;
+            color: #888;
+            padding: 32px 12px;
+            font-size: 1em;
+            display: none;
+        }}
+        @media (max-width: 600px) {{
+            .filter-row {{
+                flex-direction: column;
+            }}
+            .filter-select {{
+                flex: 1 1 100%;
+            }}
         }}
     </style>
 </head>
@@ -421,7 +672,7 @@ def generate_html(article80_projects, permit_projects, run_time):
     <h1>Boston HVAC Construction Tracker</h1>
     <p style="color:#888;font-size:0.85em;margin-bottom:12px;">
         Large projects ($1M+) with HVAC/pipefitting relevance &bull;
-        Updated {run_time.strftime('%B %d, %Y at %I:%M %p')} UTC
+        Updated {run_time} UTC
     </p>
 
     <div class="summary">
@@ -435,40 +686,154 @@ def generate_html(article80_projects, permit_projects, run_time):
                 <div class="stat-label">Total Tracked</div>
             </div>
             <div class="stat">
-                <div class="stat-num">{len(article80_projects)}</div>
+                <div class="stat-num">{a80_count}</div>
                 <div class="stat-label">Article 80</div>
             </div>
             <div class="stat">
-                <div class="stat-num">{len(permit_projects)}</div>
+                <div class="stat-num">{permit_count}</div>
                 <div class="stat-label">Permits</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num">{high_count}</div>
+                <div class="stat-label">High Relevance</div>
             </div>
         </div>
     </div>
 
-    {render_section("New Large Article 80 Projects", new_a80, render_a80_card, "No new Article 80 projects this week.")}
-
-    {render_section("New High-Value Permits ($1M+)", new_permits, render_permit_card, "No new high-value permits this week.")}
-
-    <details>
-        <summary>Previously Seen Article 80 Projects ({len(seen_a80)})</summary>
-        <div style="margin-top:8px;">
-            {render_section("", seen_a80, render_a80_card, "None yet.")}
+    <div class="toolbar">
+        <input type="text" id="searchInput" class="search-input" placeholder="Search by name, address, description, keyword, neighborhood, applicant...">
+        <div class="filter-row">
+            <select id="filterSource" class="filter-select">
+                <option value="">All Sources</option>
+                <option value="article80">Article 80</option>
+                <option value="permits">Permits</option>
+            </select>
+            <select id="filterRelevance" class="filter-select">
+                <option value="">All Relevance</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <select id="filterNeighborhood" class="filter-select">
+                <option value="">All Neighborhoods</option>
+                {neighborhood_options}
+            </select>
+            <select id="filterStatus" class="filter-select">
+                <option value="">All Statuses</option>
+                {status_options}
+            </select>
+            <select id="sortOrder" class="filter-select">
+                <option value="default">Sort: Default</option>
+                <option value="newest">Sort: Newest First</option>
+                <option value="oldest">Sort: Oldest First</option>
+            </select>
         </div>
-    </details>
+        <div class="filter-count" id="filterCount"></div>
+    </div>
 
-    <details>
-        <summary>Previously Seen Permits ({len(seen_permits)})</summary>
-        <div style="margin-top:8px;">
-            {render_section("", seen_permits, render_permit_card, "None yet.")}
-        </div>
-    </details>
+    <div id="cardContainer">
+        {cards_html}
+    </div>
+    <div class="no-results" id="noResults">No projects match your filters.</div>
 
     <footer style="margin-top:24px;padding-top:12px;border-top:1px solid #ddd;color:#aaa;font-size:0.75em;text-align:center;">
         Data from <a href="https://data.boston.gov" style="color:#aaa;">data.boston.gov</a> &bull;
         Article 80 Development Projects &bull; Approved Building Permits
     </footer>
+
+    <script>
+    (function() {{
+        var cards = [];
+        var container = document.getElementById('cardContainer');
+        var noResults = document.getElementById('noResults');
+        var countEl = document.getElementById('filterCount');
+        var searchInput = document.getElementById('searchInput');
+        var filterSource = document.getElementById('filterSource');
+        var filterRelevance = document.getElementById('filterRelevance');
+        var filterNeighborhood = document.getElementById('filterNeighborhood');
+        var filterStatus = document.getElementById('filterStatus');
+        var sortOrder = document.getElementById('sortOrder');
+        var debounceTimer = null;
+
+        // Collect all cards
+        var els = container.getElementsByClassName('project-card');
+        for (var i = 0; i < els.length; i++) {{
+            cards.push(els[i]);
+        }}
+        var total = cards.length;
+
+        function applyFilters() {{
+            var q = searchInput.value.toLowerCase().trim();
+            var src = filterSource.value;
+            var rel = filterRelevance.value;
+            var hood = filterNeighborhood.value;
+            var stat = filterStatus.value;
+            var shown = 0;
+
+            for (var i = 0; i < cards.length; i++) {{
+                var c = cards[i];
+                var visible = true;
+                if (src && c.getAttribute('data-source') !== src) visible = false;
+                if (rel && c.getAttribute('data-relevance') !== rel) visible = false;
+                if (hood && c.getAttribute('data-neighborhood') !== hood) visible = false;
+                if (stat && c.getAttribute('data-status') !== stat) visible = false;
+                if (q && c.getAttribute('data-search').indexOf(q) === -1) visible = false;
+                c.style.display = visible ? '' : 'none';
+                if (visible) shown++;
+            }}
+
+            countEl.textContent = 'Showing ' + shown + ' of ' + total + ' projects';
+            noResults.style.display = (shown === 0) ? 'block' : 'none';
+        }}
+
+        function applySort() {{
+            var order = sortOrder.value;
+            if (order === 'default') return;
+
+            var sorted = cards.slice().sort(function(a, b) {{
+                var da = a.getAttribute('data-date') || '';
+                var db = b.getAttribute('data-date') || '';
+                if (order === 'newest') return da < db ? 1 : (da > db ? -1 : 0);
+                return da > db ? 1 : (da < db ? -1 : 0);
+            }});
+
+            for (var i = 0; i < sorted.length; i++) {{
+                container.appendChild(sorted[i]);
+            }}
+        }}
+
+        function update() {{
+            applySort();
+            applyFilters();
+        }}
+
+        searchInput.addEventListener('input', function() {{
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(update, 200);
+        }});
+
+        filterSource.addEventListener('change', update);
+        filterRelevance.addEventListener('change', update);
+        filterNeighborhood.addEventListener('change', update);
+        filterStatus.addEventListener('change', update);
+        sortOrder.addEventListener('change', update);
+
+        // Initial count
+        applyFilters();
+    }})();
+    </script>
 </body>
-</html>"""
+</html>""".format(
+        run_time=run_time.strftime('%B %d, %Y at %I:%M %p'),
+        summary_new=summary_new,
+        summary_total=summary_total,
+        a80_count=len(article80_projects),
+        permit_count=len(permit_projects),
+        high_count=summary_high,
+        neighborhood_options=neighborhood_options,
+        status_options=status_options,
+        cards_html=cards_html,
+    )
     return html
 
 
