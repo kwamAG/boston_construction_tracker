@@ -874,7 +874,7 @@ def generate_html(article80_projects, permit_projects, run_time,
 
         brjp_table_rows += (
             '<tr class="brjp-row" data-compliance="{comp}" data-agency="{agency}" '
-            'data-project-status="{proj_status}" data-search="{search}">'
+            'data-project-status="{proj_status}" data-search="{search}" data-hours="{raw_hours}">'
             '<td class="expandable-cell">{name}<br><small style="color:#888;">{addr}</small></td>'
             '<td style="color:{rc};">{rpct:.1f}%</td>'
             '<td style="color:{pc};">{ppct:.1f}%</td>'
@@ -907,6 +907,7 @@ def generate_html(article80_projects, permit_projects, run_time,
             comp_color=comp_color,
             comp_label=comp_label,
             agencies=escape_html(agencies_str),
+            raw_hours=bp["total_hours"],
             status_color=status_color,
             status_label=status_label,
             detail_bars=detail_bars,
@@ -998,7 +999,7 @@ def generate_html(article80_projects, permit_projects, run_time,
         for trade, hours in sorted(pd["trades"].items(), key=lambda x: x[1], reverse=True):
             search_text = "{} {} {}".format(pd["name"], pd["address"], trade).lower().replace('"', "&quot;")
             pipe_table_rows += (
-                '<tr class="pipe-row" data-trade="{trade_val}" data-project-status="{proj_status}" data-search="{search}">'
+                '<tr class="pipe-row" data-trade="{trade_val}" data-project-status="{proj_status}" data-search="{search}" data-hours="{raw_hours}">'
                 '<td class="expandable-cell">{name}<br><small style="color:#888;">{addr}</small></td>'
                 '<td>{trade}</td>'
                 '<td>{hours}</td>'
@@ -1019,6 +1020,7 @@ def generate_html(article80_projects, permit_projects, run_time,
                 addr=escape_html(pd["address"][:60]),
                 trade=escape_html(trade),
                 hours=format_hours(hours),
+                raw_hours=hours,
                 status_color="#27ae60" if proj_status == "active" else "#95a5a6",
                 status_label="Active" if proj_status == "active" else "Completed",
                 trades_breakdown=trades_breakdown,
@@ -1280,6 +1282,9 @@ def generate_html(article80_projects, permit_projects, run_time,
         .data-table td {{ padding: 8px 6px; border-bottom: 1px solid #eee; }}
         .data-table tr:hover {{ background: #f9f9f9; }}
         .table-wrap {{ overflow-x: auto; }}
+        .sortable-th {{ cursor: pointer; user-select: none; }}
+        .sortable-th:hover {{ background: #e8e8e8; }}
+        .sort-arrow {{ font-size: 0.7em; margin-left: 2px; color: #666; }}
 
         /* Trade cards */
         .trade-cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }}
@@ -1475,7 +1480,7 @@ def generate_html(article80_projects, permit_projects, run_time,
                         <th>Residents %</th>
                         <th>POC %</th>
                         <th>Women %</th>
-                        <th>Total Hours</th>
+                        <th class="sortable-th" id="brjpSortHours" data-sort="desc">Total Hours <span class="sort-arrow">&#9660;</span></th>
                         <th>Compliance</th>
                         <th>Agency</th>
                         <th>Status</th>
@@ -1515,7 +1520,7 @@ def generate_html(article80_projects, permit_projects, run_time,
                     <tr>
                         <th>Project</th>
                         <th>Trade</th>
-                        <th>Hours</th>
+                        <th class="sortable-th" id="pipeSortHours" data-sort="desc">Hours <span class="sort-arrow">&#9660;</span></th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -1721,6 +1726,75 @@ def generate_html(article80_projects, permit_projects, run_time,
         pipeTrade.addEventListener('change', applyPipeFilters);
         pipeStatus.addEventListener('change', applyPipeFilters);
         applyPipeFilters();
+
+        /* === Sorting for Hours columns === */
+        function sortTableRows(mainRows, detailRows, tbody, currentDir) {{
+            // Build pairs of [mainRow, detailRow, hoursValue]
+            var pairs = [];
+            for (var i = 0; i < mainRows.length; i++) {{
+                var hrs = parseFloat(mainRows[i].getAttribute('data-hours')) || 0;
+                pairs.push({{ main: mainRows[i], detail: detailRows[i], hours: hrs }});
+            }}
+            pairs.sort(function(a, b) {{
+                if (currentDir === 'asc') return a.hours - b.hours;
+                return b.hours - a.hours;
+            }});
+            for (var i = 0; i < pairs.length; i++) {{
+                tbody.appendChild(pairs[i].main);
+                tbody.appendChild(pairs[i].detail);
+            }}
+        }}
+
+        var brjpSortBtn = document.getElementById('brjpSortHours');
+        brjpSortBtn.addEventListener('click', function(e) {{
+            e.stopPropagation();
+            var dir = this.getAttribute('data-sort');
+            var newDir = (dir === 'desc') ? 'asc' : 'desc';
+            this.setAttribute('data-sort', newDir);
+            this.querySelector('.sort-arrow').innerHTML = (newDir === 'asc') ? '&#9650;' : '&#9660;';
+            // Re-query rows since DOM order may have changed
+            var tbody = document.querySelector('#brjpTable tbody');
+            var mRows = tbody.querySelectorAll('.brjp-row');
+            var dRows = tbody.querySelectorAll('.brjp-detail-row');
+            sortTableRows(mRows, dRows, tbody, newDir);
+            // Re-bind brjpRows/brjpDetailRows references and click handlers
+            brjpRows = document.querySelectorAll('.brjp-row');
+            brjpDetailRows = document.querySelectorAll('.brjp-detail-row');
+            for (var i = 0; i < brjpRows.length; i++) {{
+                brjpRows[i].addEventListener('click', (function(idx) {{
+                    return function() {{
+                        brjpRows[idx].classList.toggle('open');
+                        brjpDetailRows[idx].classList.toggle('open');
+                    }};
+                }})(i));
+            }}
+            applyBrjpFilters();
+        }});
+
+        var pipeSortBtn = document.getElementById('pipeSortHours');
+        pipeSortBtn.addEventListener('click', function(e) {{
+            e.stopPropagation();
+            var dir = this.getAttribute('data-sort');
+            var newDir = (dir === 'desc') ? 'asc' : 'desc';
+            this.setAttribute('data-sort', newDir);
+            this.querySelector('.sort-arrow').innerHTML = (newDir === 'asc') ? '&#9650;' : '&#9660;';
+            var tbody = document.querySelector('#pipeTable tbody');
+            var mRows = tbody.querySelectorAll('.pipe-row');
+            var dRows = tbody.querySelectorAll('.pipe-detail-row');
+            sortTableRows(mRows, dRows, tbody, newDir);
+            // Re-bind pipeRows/pipeDetailRows references and click handlers
+            pipeRows = document.querySelectorAll('.pipe-row');
+            pipeDetailRows = document.querySelectorAll('.pipe-detail-row');
+            for (var i = 0; i < pipeRows.length; i++) {{
+                pipeRows[i].addEventListener('click', (function(idx) {{
+                    return function() {{
+                        pipeRows[idx].classList.toggle('open');
+                        pipeDetailRows[idx].classList.toggle('open');
+                    }};
+                }})(i));
+            }}
+            applyPipeFilters();
+        }});
     }})();
     </script>
 </body>
