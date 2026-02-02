@@ -21,6 +21,7 @@ jobs:
           python-version: '3.12'
 
       - name: Run tracker
+        timeout-minutes: 10
         run: python3 tracker.py
 
       - name: Commit and push changes
