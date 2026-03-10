@@ -1007,7 +1007,7 @@ def generate_html(article80_projects, permit_projects, run_time,
                 '</tr>'
                 '<tr class="pipe-detail-row">'
                 '<td colspan="4"><div class="detail-panel">'
-                '<div class="detail-subtitle">All Pipefitter Trades for this Project</div>'
+                '<div class="detail-subtitle">All UA Trades for this Project</div>'
                 '{trades_breakdown}'
                 '<div class="detail-info">{pipe_compliance}</div>'
                 '<div class="detail-links">{pipe_links}</div>'
@@ -1063,18 +1063,20 @@ def generate_html(article80_projects, permit_projects, run_time,
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: #f5f5f5;
             color: #333;
-            line-height: 1.5;
+            line-height: 1.6;
             padding: 12px;
-            max-width: 900px;
+            max-width: 960px;
             margin: 0 auto;
+            font-size: 15px;
         }}
         h1 {{ font-size: 1.3em; margin-bottom: 4px; }}
         .summary {{
             background: #fff;
             border-radius: 8px;
-            padding: 12px;
+            padding: 16px;
             margin-bottom: 16px;
             border: 1px solid #ddd;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         }}
         .summary-grid {{
             display: grid;
@@ -1088,8 +1090,8 @@ def generate_html(article80_projects, permit_projects, run_time,
             background: #f9f9f9;
             border-radius: 6px;
         }}
-        .stat-num {{ font-size: 1.5em; font-weight: bold; color: #2c3e50; }}
-        .stat-label {{ font-size: 0.7em; color: #888; }}
+        .stat-num {{ font-size: 1.7em; font-weight: 800; color: #2c3e50; }}
+        .stat-label {{ font-size: 0.75em; color: #666; text-transform: uppercase; letter-spacing: 0.02em; }}
 
         /* Tabs */
         .tab-bar {{
@@ -1104,22 +1106,24 @@ def generate_html(article80_projects, permit_projects, run_time,
         }}
         .tab-btn {{
             flex: 1;
-            padding: 10px 16px;
+            padding: 12px 16px;
             border: none;
-            background: #f5f5f5;
+            background: #e9ecef;
             cursor: pointer;
-            font-size: 0.9em;
+            font-size: 0.92em;
             font-weight: 600;
-            color: #666;
+            color: #888;
             border-bottom: 3px solid transparent;
             white-space: nowrap;
+            transition: background 0.15s, color 0.15s;
         }}
         .tab-btn.active {{
             background: #fff;
-            color: #2c3e50;
-            border-bottom-color: #3498db;
+            color: #1a252f;
+            border-bottom-color: #2980b9;
+            font-weight: 700;
         }}
-        .tab-btn:hover {{ background: #eef; }}
+        .tab-btn:hover {{ background: #dce3ea; color: #555; }}
         .tab-content {{
             display: none;
             background: #fff;
@@ -1175,12 +1179,20 @@ def generate_html(article80_projects, permit_projects, run_time,
         }}
         .project-card {{
             border: 1px solid #ddd;
-            border-left: 4px solid #3498db;
+            border-left: 5px solid #3498db;
             border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 12px;
+            padding: 16px;
+            margin-bottom: 14px;
             background: #fff;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            transition: box-shadow 0.15s;
         }}
+        .project-card:hover {{
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        .project-card[data-relevance="high"] {{ border-left-color: #c0392b; }}
+        .project-card[data-relevance="medium"] {{ border-left-color: #e67e22; }}
+        .project-card[data-relevance="low"] {{ border-left-color: #95a5a6; }}
         .project-card[data-is-new="true"] {{ border-left-color: #27ae60; }}
         .card-header {{ margin-bottom: 6px; }}
         .card-title-row {{
@@ -1199,26 +1211,27 @@ def generate_html(article80_projects, permit_projects, run_time,
         .card-badges {{ display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }}
         .badge {{
             color: #fff;
-            padding: 2px 8px;
+            padding: 3px 9px;
             border-radius: 10px;
-            font-size: 0.72em;
+            font-size: 0.75em;
             font-weight: bold;
             white-space: nowrap;
         }}
         .badge-new {{ background: #27ae60; }}
-        .card-sub {{ color: #666; font-size: 0.85em; margin-top: 4px; }}
-        .card-detail {{ font-size: 0.85em; margin-top: 4px; }}
-        .card-desc {{ font-size: 0.85em; margin-top: 6px; color: #444; }}
-        .card-keywords {{ margin-top: 6px; font-size: 0.85em; }}
+        .card-sub {{ color: #666; font-size: 0.88em; margin-top: 5px; }}
+        .card-detail {{ font-size: 0.88em; margin-top: 6px; line-height: 1.5; }}
+        .card-desc {{ font-size: 0.88em; margin-top: 8px; color: #444; line-height: 1.5; }}
+        .card-keywords {{ margin-top: 8px; font-size: 0.88em; }}
         .kw-tag {{
             background: #eee; padding: 2px 6px; border-radius: 4px;
             font-size: 0.85em; margin: 2px; display: inline-block;
         }}
         .card-links {{ margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }}
         .link-btn {{
-            display: inline-block; padding: 4px 10px; font-size: 0.78em;
+            display: inline-block; padding: 5px 12px; font-size: 0.82em;
             border: 1px solid #3498db; border-radius: 4px; color: #3498db;
             text-decoration: none; font-weight: 600;
+            transition: background 0.15s, color 0.15s;
         }}
         .link-btn:hover {{ background: #3498db; color: #fff; }}
         .no-results {{
@@ -1236,7 +1249,7 @@ def generate_html(article80_projects, permit_projects, run_time,
             display: flex; align-items: center; gap: 6px;
         }}
         .brjp-mini-row {{ display: flex; align-items: center; gap: 6px; margin: 2px 0; }}
-        .brjp-mini-label {{ font-size: 0.72em; width: 60px; color: #666; }}
+        .brjp-mini-label {{ font-size: 0.78em; width: 65px; color: #555; }}
         .brjp-mini-track {{
             flex: 1; height: 8px; background: #eee; border-radius: 4px;
             position: relative; overflow: visible;
@@ -1246,7 +1259,7 @@ def generate_html(article80_projects, permit_projects, run_time,
             position: absolute; top: -2px; width: 2px; height: 12px;
             background: #333; border-radius: 1px;
         }}
-        .brjp-mini-val {{ font-size: 0.72em; width: 45px; text-align: right; font-weight: 600; }}
+        .brjp-mini-val {{ font-size: 0.78em; width: 50px; text-align: right; font-weight: 600; }}
         .brjp-mini-hours {{ font-size: 0.7em; color: #999; margin-top: 2px; }}
 
         /* Gauges */
@@ -1268,20 +1281,23 @@ def generate_html(article80_projects, permit_projects, run_time,
         /* Info box */
         .info-box {{
             background: #eaf4fc; border: 1px solid #b8d4e8; border-radius: 6px;
-            padding: 10px 14px; font-size: 0.85em; margin-bottom: 16px; color: #2c5777;
+            padding: 12px 16px; font-size: 0.9em; margin-bottom: 16px; color: #2c5777;
         }}
 
         /* Tables */
         .data-table {{
-            width: 100%; border-collapse: collapse; font-size: 0.82em; margin-top: 12px;
+            width: 100%; border-collapse: collapse; font-size: 0.88em; margin-top: 12px;
         }}
         .data-table th {{
-            background: #f5f5f5; padding: 8px 6px; text-align: left;
-            border-bottom: 2px solid #ddd; font-weight: 600; white-space: nowrap;
+            background: #f0f2f5; padding: 10px 8px; text-align: left;
+            border-bottom: 2px solid #ccc; font-weight: 700; white-space: nowrap;
+            position: sticky; top: 0; z-index: 2;
         }}
-        .data-table td {{ padding: 8px 6px; border-bottom: 1px solid #eee; }}
-        .data-table tr:hover {{ background: #f9f9f9; }}
-        .table-wrap {{ overflow-x: auto; }}
+        .data-table td {{ padding: 10px 8px; border-bottom: 1px solid #eee; }}
+        .data-table tr:hover {{ background: #f0f6ff; }}
+        .data-table tbody tr.brjp-row:nth-child(4n+1),
+        .data-table tbody tr.pipe-row:nth-child(4n+1) {{ background: #fafbfc; }}
+        .table-wrap {{ overflow-x: auto; max-height: 70vh; overflow-y: auto; }}
         .sortable-th {{ cursor: pointer; user-select: none; }}
         .sortable-th:hover {{ background: #e8e8e8; }}
         .sort-arrow {{ font-size: 0.7em; margin-left: 2px; color: #666; }}
@@ -1289,12 +1305,13 @@ def generate_html(article80_projects, permit_projects, run_time,
         /* Trade cards */
         .trade-cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }}
         .trade-card {{
-            background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center;
+            background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 14px; text-align: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         }}
         .trade-card-name {{ font-weight: 700; font-size: 0.95em; }}
         .trade-card-hours {{ font-size: 1.2em; font-weight: 700; color: #2c3e50; margin: 4px 0; }}
-        .trade-card-projects {{ font-size: 0.75em; color: #888; }}
-        .trade-card-stats {{ font-size: 0.72em; margin-top: 6px; }}
+        .trade-card-projects {{ font-size: 0.8em; color: #888; }}
+        .trade-card-stats {{ font-size: 0.78em; margin-top: 6px; }}
 
         /* Expandable detail rows */
         .brjp-row, .pipe-row {{ cursor: pointer; }}
@@ -1317,7 +1334,7 @@ def generate_html(article80_projects, permit_projects, run_time,
             border: 1px solid #eee;
         }}
         .detail-info {{ margin: 8px 0; }}
-        .detail-info-item {{ font-size: 0.82em; margin: 3px 0; }}
+        .detail-info-item {{ font-size: 0.88em; margin: 4px 0; }}
         .detail-links {{ margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }}
         .detail-subtitle {{
             font-size: 0.82em; font-weight: 700; margin-bottom: 6px; color: #2c3e50;
@@ -1385,7 +1402,7 @@ def generate_html(article80_projects, permit_projects, run_time,
     <div class="tab-bar">
         <button class="tab-btn active" data-tab="projects">Projects</button>
         <button class="tab-btn" data-tab="jobspolicy">Jobs Policy</button>
-        <button class="tab-btn" data-tab="pipefitter">Pipefitter Stats</button>
+        <button class="tab-btn" data-tab="pipefitter">UA Trades</button>
     </div>
 
     <!-- === Projects Tab === -->
@@ -1495,12 +1512,12 @@ def generate_html(article80_projects, permit_projects, run_time,
 
     <!-- === Pipefitter Stats Tab === -->
     <div class="tab-content" id="tab-pipefitter">
-        <h2 style="font-size:1.1em;margin-bottom:12px;">Pipefitter &amp; Related Trade Statistics</h2>
+        <h2 style="font-size:1.1em;margin-bottom:12px;">UA Trade Statistics</h2>
         <div class="trade-cards">
             {pipe_trade_cards}
         </div>
         <div class="toolbar">
-            <input type="text" id="pipeSearch" class="search-input" placeholder="Search pipefitter projects by name or address...">
+            <input type="text" id="pipeSearch" class="search-input" placeholder="Search UA trade projects by name or address...">
             <div class="filter-row">
                 <select id="pipeFilterTrade" class="filter-select">
                     <option value="">All Trades</option>
